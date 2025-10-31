@@ -1,358 +1,139 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta charset="UTF-8" />
-<title>To The Moon — Browser Game</title>
-<style>
-  body { margin: 0; background: black; }
-  canvas { display: block; }
-</style>
-<script src="https://cdn.jsdelivr.net/npm/phaser@3.80.0/dist/phaser.js"></script>
+  <meta charset="UTF-8">
+  <title>Only Up 3D</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #000; }
+    #info {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: #fff;
+      font-family: sans-serif;
+      z-index: 100;
+    }
+  </style>
+  <!-- Three.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
 </head>
-
 <body>
-
+<div id="info">Use W/A/S/D to move, SPACE to jump. Climb to the top!</div>
 <script>
-// =============================================
-// GLOBAL GAME PROGRESS
-// =============================================
-let gameProgress = {
-  parts: 0
-};
+  // Scene, camera, renderer
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
 
-// =============================================
-// MAIN GAME CONFIG
-// =============================================
-const config = {
-  type: Phaser.AUTO,
-  width: 900,
-  height: 600,
-  physics: {
-    default: "arcade",
-    arcade: { gravity: { y: 900 }, debug: false }
-  },
-  scene: [EarthScene, SpaceScene, MoonScene]
-};
+  // Lights
+  const ambient = new THREE.AmbientLight(0xffffff, 0.8);
+  scene.add(ambient);
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+  dirLight.position.set(0, 50, 50);
+  scene.add(dirLight);
 
-new Phaser.Game(config);
+  // Player
+  const playerGeometry = new THREE.BoxGeometry(1, 2, 1);
+  const playerMaterial = new THREE.MeshStandardMaterial({ color: 0xffaa00 });
+  const player = new THREE.Mesh(playerGeometry, playerMaterial);
+  player.position.set(0, 1, 0);
+  scene.add(player);
 
-// =============================================
-// EARTH SCENE
-// =============================================
-function EarthScene(){}
+  // Platforms
+  const platforms = [];
+  const platGeom = new THREE.BoxGeometry(5, 1, 5);
+  const platMat  = new THREE.MeshStandardMaterial({ color: 0x004400 });
+  // create 20 platforms ascending with alternating x/z positions
+  for (let i = 0; i < 20; i++) {
+    const platform = new THREE.Mesh(platGeom, platMat);
+    const angle = i * 0.5;
+    // Spiral outward a bit so platforms aren't directly above each other
+    platform.position.set(Math.sin(angle) * 8, i * 5, Math.cos(angle) * 8);
+    scene.add(platform);
+    platforms.push(platform);
+  }
+  // mark the last platform as goal
+  const goal = platforms[platforms.length - 1];
 
-EarthScene.prototype = {
+  // Controls state
+  const keys = {};
+  window.addEventListener('keydown', (e) => { keys[e.code] = true; });
+  window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
-  preload() {
-    this.load.image("ground","https://labs.phaser.io/assets/sprites/platform.png");
-    this.load.spritesheet("player","https://labs.phaser.io/assets/sprites/dude.png",{frameWidth:32,frameHeight:48});
-    this.load.image("rocket-part","https://labs.phaser.io/assets/sprites/coin.png");
-    this.load.image("enemy","https://labs.phaser.io/assets/sprites/baddie.png");
-  },
+  // Physics variables
+  let velocityY = 0;
+  const gravity = -20;
+  const jumpStrength = 10;
+  let canJump = false;
 
-  create() {
-    this.cameras.main.setBounds(0,0,4000,600);
-    this.physics.world.setBounds(0,0,4000,600);
+  // Resize handler
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
 
-    // Platforms
-    this.platforms = this.physics.add.staticGroup();
-    for (let i=0; i<25; i++){
-      this.platforms.create(i*200,580,"ground").setScale(2).refreshBody();
-    }
+  function animate() {
+    requestAnimationFrame(animate);
 
-    // Player
-    this.player = this.physics.add.sprite(100,450,"player");
-    this.player.setBounce(0.2);
-    this.physics.add.collider(this.player,this.platforms);
+    // Horizontal movement
+    const speed = 0.15;
+    if (keys['KeyW']) player.position.z -= speed;
+    if (keys['KeyS']) player.position.z += speed;
+    if (keys['KeyA']) player.position.x -= speed;
+    if (keys['KeyD']) player.position.x += speed;
 
-    // Animations
-    this.makeAnimations();
+    // Apply gravity
+    velocityY += gravity * 0.016;
+    player.position.y += velocityY * 0.016;
 
-    // Input
-    this.cursors = this.input.keyboard.createCursorKeys();
-
-    // Rocket parts
-    this.parts = this.physics.add.group();
-    place(this.parts,400,530,"rocket-part");
-    place(this.parts,900,480,"rocket-part");
-    place(this.parts,1400,500,"rocket-part");
-    place(this.parts,2000,450,"rocket-part");
-
-    this.physics.add.overlap(this.player,this.parts,(p,part)=>{
-      part.destroy();
-      gameProgress.parts++;
-    });
-
-    // Enemies
-    this.enemies = this.physics.add.group();
-    spawnEnemy(this.enemies,800,520);
-    spawnEnemy(this.enemies,1500,520);
-    spawnEnemy(this.enemies,2600,520);
-    this.physics.add.collider(this.enemies, this.platforms);
-    this.physics.add.collider(this.player,this.enemies,handleEnemy,null,this);
-
-    // Launch pad
-    this.launchpad = this.physics.add.staticImage(3800,520,"rocket-part");
-    this.physics.add.overlap(this.player,this.launchpad,()=>{
-      if (gameProgress.parts >= 4){
-        this.scene.start("SpaceScene");
+    // Simple collision detection with platforms
+    canJump = false;
+    platforms.forEach((plat) => {
+      const yDist = player.position.y - plat.position.y;
+      // Check if player is landing on top of platform
+      if (Math.abs(yDist) < 1.2 &&
+          Math.abs(player.position.x - plat.position.x) < 3 &&
+          Math.abs(player.position.z - plat.position.z) < 3 &&
+          velocityY <= 0) {
+        // Snap player to platform top
+        player.position.y = plat.position.y + 1.5;
+        velocityY = 0;
+        canJump = true;
       }
     });
 
-    this.cameras.main.startFollow(this.player,true,0.1,0.1);
-  },
-
-  update(){
-    moveCharacter(this.player,this.cursors);
-    if (this.player.y > 800) this.scene.restart();
-  },
-
-  makeAnimations(){
-    this.anims.create({
-      key:"left",
-      frames:this.anims.generateFrameNumbers("player",{start:0,end:3}),
-      frameRate:10,
-      repeat:-1
-    });
-    this.anims.create({
-      key:"turn",
-      frames:[{key:"player",frame:4}],
-      frameRate:20
-    });
-    this.anims.create({
-      key:"right",
-      frames:this.anims.generateFrameNumbers("player",{start:5,end:8}),
-      frameRate:10,
-      repeat:-1
-    });
-  }
-};
-
-// =============================================
-// SPACE SCENE
-// =============================================
-function SpaceScene(){}
-
-SpaceScene.prototype = {
-
-  preload(){
-    this.load.image("ground","https://labs.phaser.io/assets/sprites/platform.png");
-    this.load.image("enemy","https://labs.phaser.io/assets/sprites/baddie.png");
-    this.load.spritesheet("player","https://labs.phaser.io/assets/sprites/dude.png",{frameWidth:32,frameHeight:48});
-    this.load.image("moon-door","https://labs.phaser.io/assets/sprites/star.png");
-  },
-
-  create(){
-    this.cameras.main.setBounds(0,0,4000,600);
-    this.physics.world.setBounds(0,0,4000,600);
-
-    // Platforms
-    this.platforms = this.physics.add.staticGroup();
-    for (let i=0;i<20;i++){
-      this.platforms.create(i*200,580,"ground").setScale(2).refreshBody();
+    // Jump input
+    if (keys['Space'] && canJump) {
+      velocityY = jumpStrength;
     }
 
-    // Player
-    this.player = this.physics.add.sprite(50,450,"player");
-    this.player.setCollideWorldBounds(true);
-    this.physics.add.collider(this.player,this.platforms);
-
-    this.makeAnimations();
-    this.cursors = this.input.keyboard.createCursorKeys();
-
-    // Enemies
-    this.enemies = this.physics.add.group();
-    spawnEnemy(this.enemies,700,520);
-    spawnEnemy(this.enemies,1200,520);
-    spawnEnemy(this.enemies,1700,520);
-    this.physics.add.collider(this.enemies,this.platforms);
-    this.physics.add.collider(this.player,this.enemies,handleEnemy,null,this);
-
-    // Goal
-    this.moonDoor = this.physics.add.staticImage(3800,520,"moon-door");
-    this.physics.add.overlap(this.player,this.moonDoor,()=>{
-      this.scene.start("MoonScene");
-    });
-
-    this.cameras.main.startFollow(this.player,true,0.1,0.1);
-  },
-
-  update(){
-    moveCharacter(this.player,this.cursors);
-    if (this.player.y > 800) this.scene.restart();
-  },
-
-  makeAnimations(){
-    this.anims.create({
-      key:"left",
-      frames:this.anims.generateFrameNumbers("player",{start:0,end:3}),
-      frameRate:10,
-      repeat:-1
-    });
-    this.anims.create({
-      key:"turn",
-      frames:[{key:"player",frame:4}],
-      frameRate:20
-    });
-    this.anims.create({
-      key:"right",
-      frames:this.anims.generateFrameNumbers("player",{start:5,end:8}),
-      frameRate:10,
-      repeat:-1
-    });
-  }
-};
-
-// =============================================
-// MOON SCENE — ONLY UP + BOSS
-// =============================================
-function MoonScene(){}
-
-MoonScene.prototype = {
-
-  preload(){
-    this.load.image("ground","https://labs.phaser.io/assets/sprites/platform.png");
-    this.load.spritesheet("player","https://labs.phaser.io/assets/sprites/dude.png",{frameWidth:32,frameHeight:48});
-    this.load.image("boss","https://labs.phaser.io/assets/sprites/baddie.png");
-  },
-
-  create(){
-
-    // Tall vertical map
-    this.cameras.main.setBounds(0,-3000,2000,3600);
-    this.physics.world.setBounds(0,-3000,2000,3600);
-
-    // Random platforms
-    this.platforms = this.physics.add.staticGroup();
- this.platforms = this.physics.add.staticGroup();
-    // Create alternating platforms for easier climbing
-    for (let i = 0; i < 30; i++) {
-      const x = (i % 2 === 0) ? 400 : 800;
-      const y = 540 - i * 110;
-      this.platforms.create(x, y, "ground").setScale(1.3).refreshBody();
-    }  for (let i=0; i<30; i++){
-      let x = Phaser.Math.Between(200,1700);
-      let y = 540 - i*110;
-      this.platforms.create(x,y,"ground").setScale(1.3).refreshBody();
-  }
-
-    // Player
-    this.player = this.physics.add.sprite(100,450,"player");
-    this.player.setCollideWorldBounds(true);
-    this.physics.add.collider(this.player,this.platforms);
-
-    this.makeAnimations();
-    this.cursors = this.input.keyboard.createCursorKeys();
-
-    // Boss
-    this.bossHP = 5;
-    this.boss = this.physics.add.sprite(1000,-2600,"boss");
-    this.boss.setCollideWorldBounds(true);
-    this.boss.setBounce(1,0);
-    this.boss.setVelocityX(130);
-
-    this.physics.add.collider(this.boss,this.platforms);
-    this.physics.add.collider(this.player,this.boss,this.handleBoss,null,this);
-
-    // Boss HUD
-    this.hpText = this.add.text(20,20,"BOSS HP: 5",{fontSize:"28px",fill:"#fff"});
-    this.hpText.setScrollFactor(0);
-
-    this.cameras.main.startFollow(this.player,true,0.1,0.1);
-  },
-
-  handleBoss(player,boss){
-    // Stomp boss
-    if (player.body.velocity.y > 50){
-      this.bossHP--;
-      boss.setTint(0xff0000);
-      player.setVelocityY(-450);
-      setTimeout(()=>boss.clearTint(),200);
-
-      this.hpText.setText("BOSS HP: "+this.bossHP);
-
-      if (this.bossHP <= 0){
-        boss.destroy();
-        alert("🏆 YOU DEFEATED THE MOON BOSS! YOU WIN!");
-      }
-    } else {
-      // Player dies
-      player.setTint(0xff0000);
-      setTimeout(()=>location.reload(),800);
+    // Keep player above ground
+    if (player.position.y < -10) {
+      player.position.set(0, 1, 0);
+      velocityY = 0;
     }
-  },
 
-  update(){
-    moveCharacter(this.player,this.cursors);
+    // Update camera to follow player
+    camera.position.x = player.position.x;
+    camera.position.y = player.position.y + 5;
+    camera.position.z = player.position.z + 10;
+    camera.lookAt(player.position);
 
-    // Fell off
-    if (this.player.y > 800){
-      this.scene.restart();
+    // Check win condition
+    if (player.position.distanceTo(goal.position) < 2) {
+      alert('\uD83C\uDF15 You made it to the top! Game completed!');
+      // Reset player
+      player.position.set(0, 1, 0);
+      velocityY = 0;
     }
-  },
 
-  makeAnimations(){
-    this.anims.create({
-      key:"left",
-      frames:this.anims.generateFrameNumbers("player",{start:0,end:3}),
-      frameRate:10,
-      repeat:-1
-    });
-    this.anims.create({
-      key:"turn",
-      frames:[{key:"player",frame:4}],
-      frameRate:20
-    });
-    this.anims.create({
-      key:"right",
-      frames:this.anims.generateFrameNumbers("player",{start:5,end:8}),
-      frameRate:10,
-      repeat:-1
-    });
-  }
-};
-
-// =============================================
-// HELPER FUNCTIONS
-// =============================================
-function place(group,x,y,key){
-  group.create(x,y,key);
-}
-
-function spawnEnemy(group,x,y){
-  let en = group.create(x,y,"enemy");
-  en.setCollideWorldBounds(true);
-  en.setVelocityX(60);
-  en.setBounce(1,0);
-}
-
-function handleEnemy(player,enemy){
-  if (player.body.velocity.y > 50){
-    enemy.destroy();
-    player.setVelocityY(-300);
-  } else {
-    player.setTint(0xff0000);
-    setTimeout(()=>location.reload(),800);
-  }
-}
-
-function moveCharacter(player,cursors){
-  if (cursors.left.isDown){
-    player.setVelocityX(-200);
-    player.anims.play("left",true);
-  } else if (cursors.right.isDown){
-    player.setVelocityX(200);
-    player.anims.play("right",true);
-  } else {
-    player.setVelocityX(0);
-    player.anims.play("turn");
+    renderer.render(scene, camera);
   }
 
-  if (cursors.up.isDown && player.body.touching.down){
-    player.setVelocityY(-500);
-  }
-}
+  animate();
 </script>
-
 </body>
 </html>
