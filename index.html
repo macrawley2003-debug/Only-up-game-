@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Only Up 3D</title>
   <style>
     body { margin: 0; overflow: hidden; background: #000; }
@@ -14,7 +14,6 @@
       z-index: 100;
     }
   </style>
-  <!-- Three.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
 </head>
 <body>
@@ -45,16 +44,22 @@
   const platforms = [];
   const platGeom = new THREE.BoxGeometry(5, 1, 5);
   const platMat  = new THREE.MeshStandardMaterial({ color: 0x004400 });
-  // create 20 platforms ascending with alternating x/z positions
   for (let i = 0; i < 20; i++) {
     const platform = new THREE.Mesh(platGeom, platMat);
-    const angle = i * 0.5;
-    // Spiral outward a bit so platforms aren't directly above each other
-    platform.position.set(Math.sin(angle) * 8, i * 5, Math.cos(angle) * 8);
+    const y = i * 5;
+    let x, z;
+    if (i === 0) {
+      x = 0;
+      z = 0;
+    } else {
+      const angle = i * 0.5;
+      x = Math.sin(angle) * 8;
+      z = Math.cos(angle) * 8;
+    }
+    platform.position.set(x, y, z);
     scene.add(platform);
     platforms.push(platform);
   }
-  // mark the last platform as goal
   const goal = platforms[platforms.length - 1];
 
   // Controls state
@@ -93,12 +98,10 @@
     canJump = false;
     platforms.forEach((plat) => {
       const yDist = player.position.y - plat.position.y;
-      // Check if player is landing on top of platform
       if (Math.abs(yDist) < 1.2 &&
           Math.abs(player.position.x - plat.position.x) < 3 &&
           Math.abs(player.position.z - plat.position.z) < 3 &&
           velocityY <= 0) {
-        // Snap player to platform top
         player.position.y = plat.position.y + 1.5;
         velocityY = 0;
         canJump = true;
@@ -124,8 +127,7 @@
 
     // Check win condition
     if (player.position.distanceTo(goal.position) < 2) {
-      alert('\uD83C\uDF15 You made it to the top! Game completed!');
-      // Reset player
+      alert('🌕 You made it to the top! Game completed!');
       player.position.set(0, 1, 0);
       velocityY = 0;
     }
