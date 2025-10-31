@@ -37,7 +37,8 @@
   const playerGeometry = new THREE.BoxGeometry(1, 2, 1);
   const playerMaterial = new THREE.MeshStandardMaterial({ color: 0xffaa00 });
   const player = new THREE.Mesh(playerGeometry, playerMaterial);
-  player.position.set(0, 1, 0);
+  // spawn above first platform
+  player.position.set(0, 2, 0);
   scene.add(player);
 
   // Platforms
@@ -113,9 +114,9 @@
       velocityY = jumpStrength;
     }
 
-    // Keep player above ground
+    // Keep player above ground by resetting to spawn above first platform
     if (player.position.y < -10) {
-      player.position.set(0, 1, 0);
+      player.position.set(0, 2, 0);
       velocityY = 0;
     }
 
@@ -128,7 +129,7 @@
     // Check win condition
     if (player.position.distanceTo(goal.position) < 2) {
       alert('🌕 You made it to the top! Game completed!');
-      player.position.set(0, 1, 0);
+      player.position.set(0, 2, 0);
       velocityY = 0;
     }
 
